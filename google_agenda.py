@@ -62,6 +62,47 @@ class GoogleAgenda:
         self.portaallink = portaallink
         self.service_account_email = gegevens.get("client_email", "")
 
+    def controleer(self) -> dict[str, str]:
+        """Kijkt na of de agenda bereikbaar is en of er echt in geschreven mag worden.
+
+        Google geeft bij een agenda waar je niet in mag schrijven geen nette
+        foutmelding maar een 404, en na het delen duurt het soms een minuut
+        voor het recht doorgedrongen is. Daarom maken we hier een proefafspraak
+        aan en verwijderen die meteen weer.
+        """
+        import datetime as _dt
+
+        from googleapiclient.errors import HttpError
+
+        uitslag = {"serviceaccount": self.service_account_email}
+
+        try:
+            lijst = self.dienst.events().list(calendarId=self.agenda_id, maxResults=1).execute()
+            uitslag["agenda"] = lijst.get("summary", "?")
+            uitslag["rol"] = lijst.get("accessRole", "?")
+            uitslag["lezen"] = "ok"
+        except HttpError as exc:
+            uitslag["lezen"] = f"mislukt (HTTP {exc.status_code})"
+            return uitslag
+
+        ver_weg = _dt.date.today() + _dt.timedelta(days=365 * 3)
+        try:
+            proef = self.dienst.events().insert(
+                calendarId=self.agenda_id,
+                body={
+                    "summary": "Proefafspraak resultatenwacht",
+                    "start": {"date": ver_weg.isoformat()},
+                    "end": {"date": (ver_weg + _dt.timedelta(days=1)).isoformat()},
+                    "extendedProperties": {"private": {"bron": BRON, "sleutel": "proef"}},
+                },
+            ).execute()
+            self.dienst.events().delete(calendarId=self.agenda_id, eventId=proef["id"]).execute()
+            uitslag["schrijven"] = "ok"
+        except HttpError as exc:
+            uitslag["schrijven"] = f"mislukt (HTTP {exc.status_code})"
+
+        return uitslag
+
     # ------------------------------------------------------------- uitlezen
 
     def eigen_items(self, van: dt.date, tot: dt.date) -> dict[str, dict[str, Any]]:

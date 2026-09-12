@@ -117,7 +117,43 @@ def toon(items: list[kb.AgendaItem]) -> int:
     return 0
 
 
+def controleer() -> int:
+    """Test de hele keten: inloggen, selectie, en lees- en schrijfrecht op de agenda."""
+    items, _ = verzamel_items()
+    print()
+    print(f"Portaal   : ok, {len(items)} items geselecteerd")
+
+    from google_agenda import GoogleAgenda
+
+    agenda = GoogleAgenda(vereist("GOOGLE_AGENDA_ID"), _service_account_sleutel(), portaal_url())
+    uitslag = agenda.controleer()
+
+    print(f"Account   : {uitslag['serviceaccount']}")
+    print(f"Agenda    : {uitslag.get('agenda', '?')} (rol: {uitslag.get('rol', '?')})")
+    print(f"Lezen     : {uitslag['lezen']}")
+    print(f"Schrijven : {uitslag.get('schrijven', 'niet geprobeerd')}")
+
+    if uitslag.get("schrijven") != "ok":
+        print()
+        print(
+            "Schrijven lukt nog niet. Meestal is de agenda nog niet (of nog niet lang "
+            "genoeg) gedeeld met bovenstaand adres. Controleer in Google Agenda of het "
+            "recht 'Wijzigingen aanbrengen en alle afspraakdetails bekijken' erop staat, "
+            "en probeer het na een minuut opnieuw."
+        )
+        print()
+        return 1
+
+    print()
+    print("Alles in orde. Draai 'python kalender.py --dry-run' om te zien wat er zou veranderen.")
+    print()
+    return 0
+
+
 def synchroniseer(args: argparse.Namespace) -> int:
+    if args.controleer:
+        return controleer()
+
     items, _ = verzamel_items()
 
     if args.toon:
@@ -181,6 +217,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Zet de schoolkalender in je Google Agenda.")
     parser.add_argument("--toon", action="store_true", help="Toon de selectie, raak de agenda niet aan.")
     parser.add_argument("--dry-run", action="store_true", help="Toon wat er in de agenda zou veranderen.")
+    parser.add_argument(
+        "--controleer", action="store_true",
+        help="Test de verbinding met het portaal en met Google, zonder iets te wijzigen.",
+    )
     parser.add_argument("--verbose", action="store_true", help="Meer logging.")
     args = parser.parse_args()
 

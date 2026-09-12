@@ -307,6 +307,7 @@ cp .env.example .env          # en dan invullen
 | `python watcher.py` | normale controle |
 | `python watcher.py --meld-alles` | mailt alles, ook bij een leeg geheugen |
 | `python watcher.py --loop 3600` | blijft draaien en controleert elk uur |
+| `python kalender.py --controleer` | test portaal én Google-verbinding, wijzigt niets |
 | `python kalender.py --toon` | toont welke kalenderitems geselecteerd worden |
 | `python kalender.py --dry-run` | toont wat er in je Google Agenda zou veranderen |
 | `python kalender.py` | synchroniseert de kalender echt |
@@ -363,39 +364,161 @@ wie het gaat. Uitzetten kan met `KALENDER_NAAM_IN_TITEL=0`.
 
 ### Google klaarzetten
 
-De sync schrijft in je agenda via een **serviceaccount**: een soort robotgebruiker
-van Google waarmee je één agenda deelt. Zo hoef je nooit je eigen
-Google-wachtwoord ergens in te vullen.
+Dit is het enige stuk waar wat klikwerk bij komt kijken. Reken op tien minuten.
+Je hebt een gewoon (gratis) Google-account nodig; een betaalde Workspace hoeft
+niet, en er wordt niets aangerekend.
 
-1. Ga naar [console.cloud.google.com](https://console.cloud.google.com) en maak
-   een nieuw project (naam maakt niet uit, bv. *Schoolkalender*).
-2. Zoek bovenaan naar **Google Calendar API** en klik op **Enable**.
-3. Ga naar **APIs & Services → Credentials → Create credentials →
-   Service account**. Geef een naam, klik door en maak hem aan.
-4. Klik het nieuwe serviceaccount aan, ga naar **Keys → Add key → Create new key
-   → JSON**. Er wordt een bestand gedownload. Bewaar dat goed: het is een
-   sleutel, geen wachtwoord dat je kunt terugzien.
-5. Noteer het e-mailadres van het serviceaccount. Dat ziet eruit als
-   `iets@jouw-project.iam.gserviceaccount.com`.
-6. Open [Google Agenda](https://calendar.google.com), ga naar de instellingen van
-   de agenda waarin je de schoolitems wil, en kies **Delen met bepaalde personen
-   → Persoon toevoegen**. Plak daar het adres van het serviceaccount en geef het
-   de rechten **Wijzigingen aanbrengen in afspraken**.
-7. In diezelfde instellingen, onderaan bij *Agenda integreren*, staat de
-   **agenda-ID**. Die heb je zo nodig.
+De sync schrijft in je agenda via een **serviceaccount**: een robotgebruiker met
+een eigen e-mailadres. Je deelt je agenda met dat adres, net zoals je ze met je
+partner zou delen. Zo komt je eigen Google-wachtwoord nergens in het spel, en
+kun je de toegang met één klik weer intrekken.
 
-Zet daarna in je repo:
+#### Stap 1 — Een project maken
+
+Ga naar [console.cloud.google.com](https://console.cloud.google.com). Log in met
+het account dat eigenaar is van de agenda waarin je wil schrijven.
+
+Klik bovenaan op de projectkiezer en dan op **New project**. Geef het een naam
+(bijvoorbeeld *Schoolkalender*) en klik **Create**. Het aanmaken duurt een paar
+seconden; je ziet het verschijnen bij de meldingen (het belletje rechtsboven).
+
+Heb je al een project dat je hiervoor wil gebruiken, sla deze stap dan over —
+maar let er dan op dat je bij elke volgende stap bovenaan het **juiste project**
+geselecteerd hebt. Dat is de meest gemaakte fout: een serviceaccount in project A
+en de ingeschakelde API in project B.
+
+#### Stap 2 — De Calendar API inschakelen
+
+Zoek bovenaan naar **Google Calendar API**, of ga rechtstreeks naar
+[deze pagina](https://console.cloud.google.com/apis/library/calendar-json.googleapis.com).
+Controleer bovenaan of je project geselecteerd is en klik op **Enable**.
+
+Staat er al *API Enabled* met een groen vinkje, dan is dit in orde.
+
+#### Stap 3 — Het serviceaccount aanmaken
+
+Ga naar **IAM & Admin → Service accounts → Create service account**.
+
+* **Service account name**: bijvoorbeeld `kalendersync`. Het e-mailadres wordt
+  automatisch gevormd en staat meteen onder het veld; het ziet eruit als
+  `kalendersync@jouw-project-123456.iam.gserviceaccount.com`. **Noteer dat
+  adres**, je hebt het in stap 5 nodig.
+* Stap 2 (*Permissions*) en stap 3 (*Principals with access*) van het formulier
+  mag je **overslaan**. Dat zijn rechten binnen je Cloud-project, en die heeft de
+  sync niet nodig: de toegang tot je agenda regel je straks in Google Agenda zelf.
+* Klik op **Create and close**.
+
+#### Stap 4 — Een sleutel aanmaken en downloaden
+
+Klik het nieuwe serviceaccount aan en ga naar het tabblad **Keys**.
+
+Klik **Add key → Create new key**, kies **JSON** en klik **Create**. Je browser
+downloadt meteen een bestand van ongeveer 2 kB met een naam als
+`jouw-project-123456-a1b2c3d4e5f6.json`.
+
+> **Dit bestand is het wachtwoord van het serviceaccount.** Wie het heeft, kan
+> schrijven in elke agenda die je ermee deelt. Je kunt het bij Google niet
+> opnieuw bekijken: raak je het kwijt, dan maak je een nieuwe sleutel en
+> verwijder je de oude. Zet het nooit in een repo, ook niet in een private.
+> In `.gitignore` staat daarom al een regel voor `google-sleutel.json`.
+>
+> Google waarschuwt je op diezelfde pagina dat sleutels die in een publieke
+> repository opduiken automatisch uitgeschakeld worden. Dat is geen loos dreigement.
+
+Bewaar het bestand voorlopig ergens waar je het terugvindt. Werk je lokaal, zet
+het dan naast de scripts als `google-sleutel.json`.
+
+#### Stap 5 — Je agenda delen met het serviceaccount
+
+Open [Google Agenda](https://calendar.google.com). Ga links bij *Mijn agenda's*
+met je muis over de agenda waarin je de schoolitems wil, klik op de drie puntjes
+en kies **Instellingen en delen**.
+
+Scroll naar **Delen met bepaalde personen of groepen** en klik op
+**Mensen en groepen toevoegen**:
+
+1. Plak het e-mailadres van het serviceaccount uit stap 3.
+2. Zet **Rechten** op **Wijzigingen aanbrengen en alle afspraakdetails bekijken**.
+3. Klik **Sturen**.
+
+Kies bewust *niet* de optie *Wijzigingen aanbrengen en opties voor delen beheren*:
+de sync hoeft je deelinstellingen niet te kunnen wijzigen.
+
+Er wordt geen uitnodiging verstuurd die iemand moet aanvaarden — een
+serviceaccount kan dat niet, en dat hoeft ook niet. Het adres verschijnt meteen
+in de lijst en dat is genoeg.
+
+#### Stap 6 — De agenda-ID opzoeken
+
+Blijf in dezelfde instellingenpagina en scroll naar **Agenda integreren**. Daar
+staat de **Agenda-ID**. Voor je eigen hoofdagenda is dat gewoon je e-mailadres;
+voor een aangemaakte agenda ziet het eruit als
+`a1b2c3...9f8e@group.calendar.google.com`.
+
+Kopieer die waarde.
+
+#### Stap 7 — Alles invullen en testen
+
+Lokaal in je `.env`:
+
+```
+GOOGLE_AGENDA_ID=...@group.calendar.google.com
+GOOGLE_SERVICE_ACCOUNT_JSON_FILE=google-sleutel.json
+```
+
+Op GitHub als **secrets**:
 
 | Secret | Wat je invult |
 |---|---|
-| `GOOGLE_AGENDA_ID` | de agenda-ID uit stap 7 |
+| `GOOGLE_AGENDA_ID` | de agenda-ID uit stap 6 |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | de **volledige inhoud** van het JSON-bestand uit stap 4 |
 
-En als variabelen: `KALENDER_SOORTEN`, `KALENDER_SCHOOLBREED` en `KALENDER_UUR`
-(het uur waarop de sync draait, standaard 6).
+Voor dat laatste open je het sleutelbestand in een teksteditor en plak je alles,
+van de eerste `{` tot de laatste `}`. Of laat het script het doen:
+`python scripts/secrets_zetten.py` leest je `.env` en zet alles in één keer.
 
-Zet tot slot de workflow **Kalendersync** aan bij *Actions*, en start ze één keer
-handmatig.
+Test dan de hele keten:
+
+```bash
+pip install -r requirements.txt -r requirements-agenda.txt
+python kalender.py --controleer
+```
+
+Je hoort dit te zien:
+
+```
+Portaal   : ok, 60 items geselecteerd
+Account   : kalendersync@jouw-project-123456.iam.gserviceaccount.com
+Agenda    : Gezinsagenda (rol: writer)
+Lezen     : ok
+Schrijven : ok
+```
+
+`--controleer` maakt daarvoor één proefafspraak ver in de toekomst aan en
+verwijdert die meteen weer. Dat is nodig omdat Google bij een agenda waarin je
+niet mag schrijven geen duidelijke foutmelding geeft (zie hieronder).
+
+> **Lukt lezen wel en schrijven niet?** Grote kans dat het delen uit stap 5 nog
+> niet doorgedrongen is. Dat duurt soms een minuut of twee. Wacht even en draai
+> `--controleer` opnieuw. Blijft het mislukken, controleer dan in Google Agenda
+> of het adres echt in de lijst staat *en* het recht op *Wijzigingen aanbrengen*
+> staat, en of je de agenda-ID van de juiste agenda gekopieerd hebt.
+
+#### Stap 8 — De workflow aanzetten
+
+Ga in je repo naar **Actions → Kalendersync** en klik **Enable workflow**. Start
+ze één keer handmatig met **dry_run** aangevinkt: dan zie je in de log precies
+wat er zou gebeuren, zonder dat er iets in je agenda verandert.
+
+Klopt dat, start ze dan nog eens zonder dry_run. Daarna draait ze elke dag om
+het uur dat je met `KALENDER_UUR` ingesteld hebt.
+
+### Een aparte agenda in plaats van je gezinsagenda
+
+Wil je de schoolitems liever apart kunnen aan- en uitzetten, maak dan in Google
+Agenda eerst een nieuwe agenda (**Andere agenda's → Nieuwe agenda maken**), deel
+die met je gezin én met het serviceaccount, en gebruik de agenda-ID daarvan. De
+rest van de stappen blijft identiek.
 
 ### Eerst eens kijken zonder iets te veranderen
 
@@ -492,6 +615,12 @@ veranderd is, **zonder de punten van je kind ergens op te slaan**.
 * **Je gegevens gaan nergens anders heen.** Alleen naar het portaal zelf en naar
   je eigen mailserver. Er zit geen analytics of externe dienst in.
 * **`.env` hoort niet in de repo.** Hij staat in `.gitignore`; laat dat zo.
+* **Het serviceaccount ziet alleen wat je deelt.** Het heeft geen toegang tot je
+  Gmail, Drive of je andere agenda's — enkel tot de agenda's die je er
+  uitdrukkelijk mee gedeeld hebt. Intrekken doe je in Google Agenda door het
+  adres uit de deellijst te verwijderen.
+* **Bewaar het sleutelbestand buiten de repo.** `.gitignore` houdt
+  `google-sleutel.json` tegen; hernoem je het, voeg dan zelf een regel toe.
 * Wil je stoppen, verwijder dan gewoon de repo of zet de workflow uit bij
   *Actions → Resultatenwacht → Disable workflow*.
 
@@ -529,6 +658,26 @@ nodig, niet je gewone wachtwoord. Test met `python watcher.py --testmail`.
 GitHub zet geplande workflows stil in repo's waar 60 dagen niets gebeurt. Deze
 wacht commit na elke controle haar geheugen, waardoor dat normaal niet gebeurt.
 Merk je het toch, ga dan naar Actions en start de workflow één keer handmatig.
+
+**Kalendersync: "HTTP 404 Not Found" bij het wegschrijven**
+Je serviceaccount mag lezen maar niet schrijven in die agenda, of het delen is
+nog niet doorgedrongen (dat duurt tot enkele minuten). Google geeft in dat geval
+een 404 in plaats van een duidelijke foutmelding. Draai
+`python kalender.py --controleer`: die zegt je of het aan het lezen, het
+schrijven of de agenda-ID ligt.
+
+**Kalendersync: "Not Found" en ook lezen mislukt**
+Dan klopt de agenda-ID niet, of de agenda is helemaal niet met het serviceaccount
+gedeeld. Controleer stap 5 en 6 van [Google klaarzetten](#google-klaarzetten).
+
+**Kalendersync: "GOOGLE_SERVICE_ACCOUNT_JSON bevat geen geldige JSON"**
+Je hebt waarschijnlijk maar een deel van het sleutelbestand geplakt. Het moet
+alles zijn, van de eerste `{` tot en met de laatste `}`.
+
+**Ik heb mijn sleutelbestand verloren of het is uitgelekt**
+Maak in de Cloud console een nieuwe sleutel aan (stap 4), zet die als secret, en
+verwijder daarna de oude sleutel op hetzelfde tabblad *Keys*. Het serviceaccount
+en het delen van je agenda blijven gewoon staan.
 
 **Ik krijg een mail dat de controle mislukt is**
 Dan is het portaal onbereikbaar of is er iets veranderd aan de website. De
