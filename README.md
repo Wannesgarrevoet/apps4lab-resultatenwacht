@@ -35,7 +35,7 @@ wat je al gezien hebt, en mailt je alleen als er echt iets nieuws bij is.
 Eén mail per keer dat er iets nieuws is, met daarin:
 
 * **een waarschuwing bovenaan** als er een **NI** tussen zit, en dat staat dan
-  ook in het onderwerp: `Let op, 1x NI - Lotte: 3 nieuwe resultaten ...`
+  ook in het onderwerp: `Let op, 1x NI - Sam: 3 nieuwe resultaten ...`
 * **een kaartje per resultaat**: opdracht, vak, doel, de score met kleur, en de
   feedback van de leerkracht als die er is
 * **een tabel onderaan** met per vak hoe vaak elke score deze periode voorkomt
@@ -358,7 +358,7 @@ Wil je die schoolbrede items niet, zet dan `KALENDER_SCHOOLBREED=0`. Dan blijft
 alleen over wat expliciet voor de klas van je kind is.
 
 Heb je meerdere kinderen op school, dan krijgt elk item de voornaam vooraan
-(`Lotte: Daguitstap Saeftinghe`), zodat je in de gezinsagenda meteen ziet over
+(`Sam: Daguitstap`), zodat je in de gezinsagenda meteen ziet over
 wie het gaat. Uitzetten kan met `KALENDER_NAAM_IN_TITEL=0`.
 
 ### Google klaarzetten
