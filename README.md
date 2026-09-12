@@ -87,6 +87,10 @@ Klik bovenaan deze pagina op **Use this template → Create a new repository**.
 Ga in je nieuwe repo naar **Actions**. Staat er een knop
 *I understand my workflows, go ahead and enable them*, klik die dan aan.
 
+Zie je links *Resultatenwacht* staan met de melding dat de workflow uit staat,
+klik dan rechts op **Enable workflow**. In deze voorbeeldrepo staat ze namelijk
+bewust uit, omdat daar geen gegevens van een ouder in zitten.
+
 ### Stap 3 — Vul je gegevens in
 
 Ga naar **Settings → Secrets and variables → Actions**.
