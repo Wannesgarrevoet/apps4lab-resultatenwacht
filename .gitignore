@@ -1,0 +1,10 @@
+# Je eigen instellingen en wachtwoorden horen hier niet in
+.env
+*.har
+data/
+
+# Testartefacten
+voorbeeld-mail.html
+
+__pycache__/
+*.pyc

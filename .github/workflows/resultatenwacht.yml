@@ -1,0 +1,108 @@
+name: Resultatenwacht
+
+on:
+  # De planning draait elk uur; de eerste stap hieronder beslist of er
+  # op dit moment echt gecontroleerd moet worden. Zo stel je het tijdstip
+  # in met de repository-variabelen MELD_UUR en MELD_DAGEN, zonder dit
+  # bestand te moeten aanpassen, en klopt het uur ook na de wissel van
+  # zomer- naar wintertijd.
+  schedule:
+    - cron: "0 * * * *"
+
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Alleen opslaan wat er nu staat, zonder te mailen"
+        type: boolean
+        default: false
+      meld_alles:
+        description: "Ook mailen als state.json leeg is (alles geldt dan als nieuw)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: resultatenwacht
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  controleren:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Is het nu tijd om te controleren?
+        id: tijd
+        env:
+          TZ: ${{ vars.TIJDZONE || 'Europe/Brussels' }}
+          MELD_UUR: ${{ vars.MELD_UUR || '16' }}
+          MELD_DAGEN: ${{ vars.MELD_DAGEN || '1,2,3,4,5,6,7' }}
+        run: |
+          uur=$(date +%-H)
+          dag=$(date +%u)          # 1 = maandag ... 7 = zondag
+          echo "Nu: dag $dag, $uur uur ($TZ). Ingesteld: uur $MELD_UUR, dagen $MELD_DAGEN."
+
+          # MELD_UUR en MELD_DAGEN mogen lijstjes zijn, bv. "8,16" en "1,2,3,4,5".
+          uren=$(echo "$MELD_UUR" | tr -d " ")
+          dagen=$(echo "$MELD_DAGEN" | tr -d " ")
+
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "Handmatig gestart, dus we draaien."
+            echo "draaien=ja" >> "$GITHUB_OUTPUT"
+          elif echo ",$uren," | grep -q ",$uur," && echo ",$dagen," | grep -q ",$dag,"; then
+            echo "draaien=ja" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nu niet aan de beurt, deze controle wordt overgeslagen."
+            echo "draaien=nee" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.tijd.outputs.draaien == 'ja'
+
+      - uses: actions/setup-python@v5
+        if: steps.tijd.outputs.draaien == 'ja'
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+        if: steps.tijd.outputs.draaien == 'ja'
+
+      - name: Controleren op nieuwe resultaten
+        if: steps.tijd.outputs.draaien == 'ja'
+        env:
+          # Login op het ouderportaal
+          A4L_EMAIL: ${{ secrets.A4L_EMAIL }}
+          A4L_PASSWORD: ${{ secrets.A4L_PASSWORD }}
+          A4L_SCHOOL_ID: ${{ vars.A4L_SCHOOL_ID || 'lab_sn' }}
+          A4L_SCHOOL_CODE: ${{ vars.A4L_SCHOOL_CODE }}
+          A4L_LEERLINGEN: ${{ vars.A4L_LEERLINGEN }}
+          A4L_VOLG_RAPPORTEN: ${{ vars.A4L_VOLG_RAPPORTEN || '1' }}
+          # Verzenden van de mail
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT || '587' }}
+          SMTP_SECURITY: ${{ vars.SMTP_SECURITY || 'starttls' }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_FROM_NAAM: ${{ vars.MAIL_FROM_NAAM || 'Resultatenwacht' }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          MAIL_BIJ_FOUT: ${{ vars.MAIL_BIJ_FOUT || '1' }}
+          # Overig
+          STATE_FILE: state.json
+          TZ: ${{ vars.TIJDZONE || 'Europe/Brussels' }}
+        run: >
+          python watcher.py
+          ${{ inputs.seed && '--seed' || '' }}
+          ${{ inputs.meld_alles && '--meld-alles' || '' }}
+
+      - name: Stand van zaken bewaren
+        if: steps.tijd.outputs.draaien == 'ja'
+        run: |
+          if [ -n "$(git status --porcelain state.json)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state.json
+            git commit -m "state: bijwerken na controle"
+            git push
+          fi

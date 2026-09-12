@@ -1,0 +1,10 @@
+services:
+  resultatenwacht:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: Europe/Brussels
+      STATE_FILE: /data/state.json
+    volumes:
+      - ./data:/data
