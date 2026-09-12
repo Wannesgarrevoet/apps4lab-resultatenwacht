@@ -1,0 +1,72 @@
+name: Kalendersync
+
+on:
+  # Draait elk uur; de eerste stap beslist of het nu tijd is. Stel het uur in
+  # met de repository-variabele KALENDER_UUR (standaard 6 uur 's ochtends).
+  schedule:
+    - cron: "0 * * * *"
+
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Alleen tonen wat er zou veranderen, niets wegschrijven"
+        type: boolean
+        default: false
+
+concurrency:
+  group: kalendersync
+  cancel-in-progress: false
+
+jobs:
+  synchroniseren:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Is het nu tijd om te synchroniseren?
+        id: tijd
+        env:
+          TZ: ${{ vars.TIJDZONE || 'Europe/Brussels' }}
+          KALENDER_UUR: ${{ vars.KALENDER_UUR || '6' }}
+        run: |
+          uur=$(date +%-H)
+          echo "Nu: $uur uur ($TZ). Ingesteld: uur $KALENDER_UUR."
+          uren=$(echo "$KALENDER_UUR" | tr -d " ")
+
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "Handmatig gestart, dus we draaien."
+            echo "draaien=ja" >> "$GITHUB_OUTPUT"
+          elif echo ",$uren," | grep -q ",$uur,"; then
+            echo "draaien=ja" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nu niet aan de beurt."
+            echo "draaien=nee" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.tijd.outputs.draaien == 'ja'
+
+      - uses: actions/setup-python@v5
+        if: steps.tijd.outputs.draaien == 'ja'
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt -r requirements-agenda.txt
+        if: steps.tijd.outputs.draaien == 'ja'
+
+      - name: Kalender synchroniseren
+        if: steps.tijd.outputs.draaien == 'ja'
+        env:
+          A4L_EMAIL: ${{ secrets.A4L_EMAIL }}
+          A4L_PASSWORD: ${{ secrets.A4L_PASSWORD }}
+          A4L_SCHOOL_ID: ${{ vars.A4L_SCHOOL_ID || 'lab_sn' }}
+          A4L_SCHOOL_CODE: ${{ vars.A4L_SCHOOL_CODE }}
+          A4L_LEERLINGEN: ${{ vars.A4L_LEERLINGEN }}
+          KALENDER_SOORTEN: ${{ vars.KALENDER_SOORTEN || 'labAThome,lesvrij,evaluatie,uitstap' }}
+          KALENDER_SCHOOLBREED: ${{ vars.KALENDER_SCHOOLBREED || '1' }}
+          KALENDER_NAAM_IN_TITEL: ${{ vars.KALENDER_NAAM_IN_TITEL || '1' }}
+          KALENDER_OPRUIMEN: ${{ vars.KALENDER_OPRUIMEN || '1' }}
+          KALENDER_SCHOOLJAAR: ${{ vars.KALENDER_SCHOOLJAAR }}
+          GOOGLE_AGENDA_ID: ${{ secrets.GOOGLE_AGENDA_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          TZ: ${{ vars.TIJDZONE || 'Europe/Brussels' }}
+        run: python kalender.py ${{ inputs.dry_run && '--dry-run' || '' }}

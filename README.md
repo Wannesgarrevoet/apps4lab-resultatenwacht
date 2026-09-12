@@ -22,10 +22,11 @@ wat je al gezien hebt, en mailt je alleen als er echt iets nieuws bij is.
 6. [Alle instellingen](#alle-instellingen)
 7. [Het tijdstip aanpassen](#het-tijdstip-aanpassen)
 8. [Commando's om te testen](#commandos-om-te-testen)
-9. [Alternatief: op je eigen pc of server](#alternatief-op-je-eigen-pc-of-server)
-10. [Hoe het werkt](#hoe-het-werkt)
-11. [Privacy en veiligheid](#privacy-en-veiligheid)
-12. [Problemen oplossen](#problemen-oplossen)
+9. [De schoolkalender in je Google Agenda](#de-schoolkalender-in-je-google-agenda)
+10. [Alternatief: op je eigen pc of server](#alternatief-op-je-eigen-pc-of-server)
+11. [Hoe het werkt](#hoe-het-werkt)
+12. [Privacy en veiligheid](#privacy-en-veiligheid)
+13. [Problemen oplossen](#problemen-oplossen)
 
 ---
 
@@ -244,6 +245,19 @@ worden het secrets en variabelen. De namen zijn dezelfde.
 | `MELD_DAGEN` | `1,2,3,4,5,6,7` | 1 = maandag ... 7 = zondag |
 | `TIJDZONE` | `Europe/Brussels` | tijdzone waarin dat uur geldt |
 
+### Kalendersync (optioneel)
+
+| Naam | Standaard | Betekenis |
+|---|---|---|
+| `KALENDER_SOORTEN` | `labAThome,lesvrij,evaluatie,uitstap` | welke soorten je in je agenda wil |
+| `KALENDER_SCHOOLBREED` | `1` | ook items die voor de hele school gelden |
+| `KALENDER_NAAM_IN_TITEL` | `1` | voornaam van je kind voor de titel zetten |
+| `KALENDER_OPRUIMEN` | `1` | geschrapte activiteiten ook uit je agenda halen |
+| `KALENDER_SCHOOLJAAR` | automatisch | bv. `2026-2027` |
+| `KALENDER_UUR` | `6` | uur waarop de sync draait |
+| `GOOGLE_AGENDA_ID` | *verplicht* | de agenda waarin gesynchroniseerd wordt |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | *verplicht* | de sleutel van je serviceaccount |
+
 ### Overig
 
 | Naam | Standaard | Betekenis |
@@ -293,6 +307,9 @@ cp .env.example .env          # en dan invullen
 | `python watcher.py` | normale controle |
 | `python watcher.py --meld-alles` | mailt alles, ook bij een leeg geheugen |
 | `python watcher.py --loop 3600` | blijft draaien en controleert elk uur |
+| `python kalender.py --toon` | toont welke kalenderitems geselecteerd worden |
+| `python kalender.py --dry-run` | toont wat er in je Google Agenda zou veranderen |
+| `python kalender.py` | synchroniseert de kalender echt |
 
 Heb je je `.env` ingevuld en wil je die gegevens naar GitHub zetten zonder ze
 over te typen:
@@ -301,6 +318,105 @@ over te typen:
 gh auth login
 python scripts/secrets_zetten.py
 ```
+
+---
+
+## De schoolkalender in je Google Agenda
+
+Naast de resultaten kan deze repo ook de **jaarkalender** van het portaal in je
+Google Agenda zetten: Lab@Home-dagen, vrije dagen, oudercontacten, uitstappen.
+Je kiest zelf welke soorten je wil, en je kunt ze rechtstreeks in je bestaande
+gezinsagenda laten komen.
+
+Dit is optioneel. Wil je het niet, laat de workflow *Kalendersync* dan gewoon
+uitstaan.
+
+### Welke soorten er zijn
+
+De school deelt haar kalender op in zes soorten. Je kiest ze met de variabele
+`KALENDER_SOORTEN` (gescheiden door komma's):
+
+| Soort | Wat erin zit |
+|---|---|
+| `labAThome` | Lab@Home-dagen: de dagen dat je kind thuis werkt |
+| `lesvrij` | vrije dagen, verlof, pedagogische studiedagen |
+| `evaluatie` | klassenraden, peer review, oudercontacten, rapporten, examendagen |
+| `uitstap` | uitstappen, theater- en filmvoorstellingen, stages |
+| `infoavond` | infoavonden en lezingen voor ouders |
+| `melding` | algemene meldingen en themaweken |
+
+Standaard staan de eerste vier aan. Wil je bijvoorbeeld alleen de vrije dagen en
+de oudercontacten, zet dan `KALENDER_SOORTEN=lesvrij,evaluatie`.
+
+### Wat is "relevant voor mijn kind"?
+
+Elke activiteit hangt aan één of meer klassen. De sync houdt alleen de
+activiteiten over die aan de klas van je kind hangen, plus de activiteiten die
+voor de hele school gelden. Activiteiten van andere klassen komen er nooit in.
+
+Wil je die schoolbrede items niet, zet dan `KALENDER_SCHOOLBREED=0`. Dan blijft
+alleen over wat expliciet voor de klas van je kind is.
+
+Heb je meerdere kinderen op school, dan krijgt elk item de voornaam vooraan
+(`Lotte: Daguitstap Saeftinghe`), zodat je in de gezinsagenda meteen ziet over
+wie het gaat. Uitzetten kan met `KALENDER_NAAM_IN_TITEL=0`.
+
+### Google klaarzetten
+
+De sync schrijft in je agenda via een **serviceaccount**: een soort robotgebruiker
+van Google waarmee je één agenda deelt. Zo hoef je nooit je eigen
+Google-wachtwoord ergens in te vullen.
+
+1. Ga naar [console.cloud.google.com](https://console.cloud.google.com) en maak
+   een nieuw project (naam maakt niet uit, bv. *Schoolkalender*).
+2. Zoek bovenaan naar **Google Calendar API** en klik op **Enable**.
+3. Ga naar **APIs & Services → Credentials → Create credentials →
+   Service account**. Geef een naam, klik door en maak hem aan.
+4. Klik het nieuwe serviceaccount aan, ga naar **Keys → Add key → Create new key
+   → JSON**. Er wordt een bestand gedownload. Bewaar dat goed: het is een
+   sleutel, geen wachtwoord dat je kunt terugzien.
+5. Noteer het e-mailadres van het serviceaccount. Dat ziet eruit als
+   `iets@jouw-project.iam.gserviceaccount.com`.
+6. Open [Google Agenda](https://calendar.google.com), ga naar de instellingen van
+   de agenda waarin je de schoolitems wil, en kies **Delen met bepaalde personen
+   → Persoon toevoegen**. Plak daar het adres van het serviceaccount en geef het
+   de rechten **Wijzigingen aanbrengen in afspraken**.
+7. In diezelfde instellingen, onderaan bij *Agenda integreren*, staat de
+   **agenda-ID**. Die heb je zo nodig.
+
+Zet daarna in je repo:
+
+| Secret | Wat je invult |
+|---|---|
+| `GOOGLE_AGENDA_ID` | de agenda-ID uit stap 7 |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | de **volledige inhoud** van het JSON-bestand uit stap 4 |
+
+En als variabelen: `KALENDER_SOORTEN`, `KALENDER_SCHOOLBREED` en `KALENDER_UUR`
+(het uur waarop de sync draait, standaard 6).
+
+Zet tot slot de workflow **Kalendersync** aan bij *Actions*, en start ze één keer
+handmatig.
+
+### Eerst eens kijken zonder iets te veranderen
+
+```bash
+pip install -r requirements.txt -r requirements-agenda.txt
+python kalender.py --toon       # toont welke items geselecteerd worden
+python kalender.py --dry-run    # toont wat er in je agenda zou veranderen
+python kalender.py              # doet het echt
+```
+
+`--toon` heeft je Google-gegevens niet nodig. Handig om eerst te kijken of de
+juiste items overblijven.
+
+### Veilig voor je eigen afspraken
+
+De sync zet op elk item dat ze aanmaakt een onzichtbaar merkteken, en zoekt
+uitsluitend op dat merkteken. Ze kan je eigen afspraken dus niet wijzigen of
+verwijderen, ook niet als je alles in je gewone gezinsagenda laat komen.
+
+Verdwijnt een activiteit van de schoolkalender, dan haalt de sync ze ook uit je
+agenda. Wil je dat niet, zet dan `KALENDER_OPRUIMEN=0`.
 
 ---
 
@@ -343,6 +459,7 @@ Het portaal is een webapp die zijn gegevens haalt bij een JSON-API:
 POST /api/auth/login                              {email, password, schoolId}
 GET  /api/evaluatie/opvolging/leerling/<id>/Ouder opdrachten, doelen en scores
 GET  /api/evaluatie/rapporten/publiek/<id>        gepubliceerde rapporten
+GET  /api/kalender/portaal/<schooljaar>           jaarkalender met soort en klassen
 ```
 
 Elke call heeft het token van de login mee (`Authorization: Bearer ...`) en de
@@ -359,6 +476,9 @@ veranderd is, **zonder de punten van je kind ergens op te slaan**.
 | `portaal_client.py` | inloggen en gegevens ophalen |
 | `resultaten.py` | vergelijken met de vorige keer, geheugen bijhouden |
 | `mailer.py` | de mail opstellen en versturen |
+| `kalender.py` | startpunt van de kalendersync |
+| `kalender_bron.py` | de jaarkalender ophalen en filteren |
+| `google_agenda.py` | items in Google Agenda zetten |
 
 ---
 
