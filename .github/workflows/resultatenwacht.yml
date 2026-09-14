@@ -1,13 +1,13 @@
 name: Resultatenwacht
 
 on:
-  # De planning draait elk uur; de eerste stap hieronder beslist of er
-  # op dit moment echt gecontroleerd moet worden. Zo stel je het tijdstip
-  # in met de repository-variabelen MELD_UUR en MELD_DAGEN, zonder dit
-  # bestand te moeten aanpassen, en klopt het uur ook na de wissel van
-  # zomer- naar wintertijd.
+  # GitHub voert geplande runs met veel vertraging uit en laat er soms hele
+  # reeksen vallen. Daarom kijkt planning.py niet of het nu precies MELD_UUR
+  # is, maar of het laatste geplande moment voorbij is en nog niet verwerkt
+  # werd. Een run die te laat start, pakt een gemist moment zo alsnog op.
+  # Minuut 17 in plaats van 0: op het hele uur is het bij GitHub het drukst.
   schedule:
-    - cron: "0 * * * *"
+    - cron: "17 * * * *"
 
   workflow_dispatch:
     inputs:
@@ -31,33 +31,18 @@ jobs:
   controleren:
     runs-on: ubuntu-latest
     steps:
-      - name: Is het nu tijd om te controleren?
-        id: tijd
-        env:
-          TZ: ${{ vars.TIJDZONE || 'Europe/Brussels' }}
-          MELD_UUR: ${{ vars.MELD_UUR || '16' }}
-          MELD_DAGEN: ${{ vars.MELD_DAGEN || '1,2,3,4,5,6,7' }}
-        run: |
-          uur=$(date +%-H)
-          dag=$(date +%u)          # 1 = maandag ... 7 = zondag
-          echo "Nu: dag $dag, $uur uur ($TZ). Ingesteld: uur $MELD_UUR, dagen $MELD_DAGEN."
-
-          # MELD_UUR en MELD_DAGEN mogen lijstjes zijn, bv. "8,16" en "1,2,3,4,5".
-          uren=$(echo "$MELD_UUR" | tr -d " ")
-          dagen=$(echo "$MELD_DAGEN" | tr -d " ")
-
-          if [ "${{ github.event_name }}" != "schedule" ]; then
-            echo "Handmatig gestart, dus we draaien."
-            echo "draaien=ja" >> "$GITHUB_OUTPUT"
-          elif echo ",$uren," | grep -q ",$uur," && echo ",$dagen," | grep -q ",$dag,"; then
-            echo "draaien=ja" >> "$GITHUB_OUTPUT"
-          else
-            echo "Nu niet aan de beurt, deze controle wordt overgeslagen."
-            echo "draaien=nee" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: actions/checkout@v4
-        if: steps.tijd.outputs.draaien == 'ja'
+
+      - name: Is het ingestelde moment aan de beurt?
+        id: tijd
+        run: >
+          python3 planning.py controleer
+          --taak resultaten
+          --uren "${{ vars.MELD_UUR || '16' }}"
+          --dagen "${{ vars.MELD_DAGEN || '1,2,3,4,5,6,7' }}"
+          --tijdzone "${{ vars.TIJDZONE || 'Europe/Brussels' }}"
+          --state state.json
+          ${{ github.event_name != 'schedule' && '--handmatig' || '' }}
 
       - uses: actions/setup-python@v5
         if: steps.tijd.outputs.draaien == 'ja'
@@ -69,6 +54,7 @@ jobs:
         if: steps.tijd.outputs.draaien == 'ja'
 
       - name: Controleren op nieuwe resultaten
+        id: controle
         if: steps.tijd.outputs.draaien == 'ja'
         env:
           # Login op het ouderportaal
@@ -87,7 +73,9 @@ jobs:
           MAIL_FROM: ${{ secrets.MAIL_FROM }}
           MAIL_FROM_NAAM: ${{ vars.MAIL_FROM_NAAM || 'Resultatenwacht' }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
-          MAIL_BIJ_FOUT: ${{ vars.MAIL_BIJ_FOUT || '1' }}
+          # Een foutmail enkel bij de eerste poging voor een moment; de
+          # herkansingen in de uren daarna mailen niet opnieuw.
+          MAIL_BIJ_FOUT: ${{ steps.tijd.outputs.eerste_poging == 'ja' && (vars.MAIL_BIJ_FOUT || '1') || '0' }}
           # Overig
           STATE_FILE: state.json
           TZ: ${{ vars.TIJDZONE || 'Europe/Brussels' }}
@@ -96,13 +84,23 @@ jobs:
           ${{ inputs.seed && '--seed' || '' }}
           ${{ inputs.meld_alles && '--meld-alles' || '' }}
 
+      - name: Moment als verwerkt noteren
+        if: always() && steps.tijd.outputs.draaien == 'ja'
+        run: >
+          python3 planning.py markeer
+          --taak resultaten
+          --state state.json
+          --moment "${{ steps.tijd.outputs.moment }}"
+          --gelukt "${{ steps.controle.outcome == 'success' }}"
+
       - name: Stand van zaken bewaren
-        if: steps.tijd.outputs.draaien == 'ja'
+        if: always() && steps.tijd.outputs.draaien == 'ja'
         run: |
           if [ -n "$(git status --porcelain state.json)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add state.json
             git commit -m "state: bijwerken na controle"
+            git pull --rebase --quiet
             git push
           fi

@@ -1,10 +1,12 @@
 name: Kalendersync
 
 on:
-  # Draait elk uur; de eerste stap beslist of het nu tijd is. Stel het uur in
-  # met de repository-variabele KALENDER_UUR (standaard 6 uur 's ochtends).
+  # Zelfde aanpak als de Resultatenwacht: planning.py beslist of het moment
+  # van KALENDER_UUR voorbij is en nog niet verwerkt werd, zodat een te laat
+  # gestarte of weggevallen run het moment niet laat verloren gaan.
+  # Minuut 43, zodat deze run niet tegelijk met de Resultatenwacht pusht.
   schedule:
-    - cron: "0 * * * *"
+    - cron: "43 * * * *"
 
   workflow_dispatch:
     inputs:
@@ -17,32 +19,25 @@ concurrency:
   group: kalendersync
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 jobs:
   synchroniseren:
     runs-on: ubuntu-latest
     steps:
-      - name: Is het nu tijd om te synchroniseren?
-        id: tijd
-        env:
-          TZ: ${{ vars.TIJDZONE || 'Europe/Brussels' }}
-          KALENDER_UUR: ${{ vars.KALENDER_UUR || '6' }}
-        run: |
-          uur=$(date +%-H)
-          echo "Nu: $uur uur ($TZ). Ingesteld: uur $KALENDER_UUR."
-          uren=$(echo "$KALENDER_UUR" | tr -d " ")
-
-          if [ "${{ github.event_name }}" != "schedule" ]; then
-            echo "Handmatig gestart, dus we draaien."
-            echo "draaien=ja" >> "$GITHUB_OUTPUT"
-          elif echo ",$uren," | grep -q ",$uur,"; then
-            echo "draaien=ja" >> "$GITHUB_OUTPUT"
-          else
-            echo "Nu niet aan de beurt."
-            echo "draaien=nee" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: actions/checkout@v4
-        if: steps.tijd.outputs.draaien == 'ja'
+
+      - name: Is het ingestelde moment aan de beurt?
+        id: tijd
+        run: >
+          python3 planning.py controleer
+          --taak kalender
+          --uren "${{ vars.KALENDER_UUR || '6' }}"
+          --dagen "1,2,3,4,5,6,7"
+          --tijdzone "${{ vars.TIJDZONE || 'Europe/Brussels' }}"
+          --state kalender_state.json
+          ${{ github.event_name != 'schedule' && '--handmatig' || '' }}
 
       - uses: actions/setup-python@v5
         if: steps.tijd.outputs.draaien == 'ja'
@@ -54,6 +49,7 @@ jobs:
         if: steps.tijd.outputs.draaien == 'ja'
 
       - name: Kalender synchroniseren
+        id: sync
         if: steps.tijd.outputs.draaien == 'ja'
         env:
           A4L_EMAIL: ${{ secrets.A4L_EMAIL }}
@@ -70,3 +66,25 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           TZ: ${{ vars.TIJDZONE || 'Europe/Brussels' }}
         run: python kalender.py ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      # Een dry-run telt niet als verwerkt: er is niets weggeschreven.
+      - name: Moment als verwerkt noteren
+        if: always() && steps.tijd.outputs.draaien == 'ja' && inputs.dry_run != true
+        run: >
+          python3 planning.py markeer
+          --taak kalender
+          --state kalender_state.json
+          --moment "${{ steps.tijd.outputs.moment }}"
+          --gelukt "${{ steps.sync.outcome == 'success' }}"
+
+      - name: Stand van zaken bewaren
+        if: always() && steps.tijd.outputs.draaien == 'ja' && inputs.dry_run != true
+        run: |
+          if [ -n "$(git status --porcelain kalender_state.json)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add kalender_state.json
+            git commit -m "state: kalendersync bijgewerkt"
+            git pull --rebase --quiet
+            git push
+          fi

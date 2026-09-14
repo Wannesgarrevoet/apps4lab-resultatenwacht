@@ -136,8 +136,9 @@ Loopt de run groen af, dan is alles in orde. Je ziet ook een nieuw bestand
 
 ### Stap 5 — Klaar
 
-Vanaf nu kijkt de wacht elke dag op het ingestelde uur. Verschijnt er een nieuw
-resultaat, dan krijg je een mail.
+Vanaf nu kijkt de wacht elke dag op of kort na het ingestelde uur. Verschijnt er
+een nieuw resultaat, dan krijg je een mail. Hoe kort na dat uur hangt af van
+GitHub; zie [Het tijdstip aanpassen](#het-tijdstip-aanpassen).
 
 Wil je meteen zien hoe zo'n mail eruitziet, start de workflow dan nog eens
 handmatig met **meld_alles** aangevinkt: dan behandelt hij alles wat er nu staat
@@ -280,9 +281,24 @@ Enkele voorbeelden:
 | Zondagavond om 20 uur | `20` | `7` |
 | Twee keer per dag, om 8 en 16 uur | `8,16` | `1,2,3,4,5,6,7` |
 
-De planning zelf draait elk uur en stopt meteen als het nog niet het juiste
-moment is. Dat kost bijna niets en heeft één groot voordeel: je uur blijft
-kloppen, ook na de overgang van zomer- naar wintertijd.
+Reken erop dat de mail **op of kort na** het ingestelde uur komt, niet op de
+minuut. Dat komt door hoe GitHub geplande workflows uitvoert: het is een
+best-effort-dienst. Bij drukte starten runs uren te laat, en vallen er soms hele
+reeksen weg. Een planning "elk uur" draait in de praktijk vaak maar een handvol
+keer per dag, op willekeurige tijdstippen.
+
+De wacht is daar tegen bestand. De workflow start elk uur, en `planning.py`
+kijkt dan niet of het *nu* precies 16 uur is, maar of het **laatste geplande
+moment** (bv. vandaag 16:00) al voorbij is en nog niet verwerkt werd. Start een
+run pas om 18:42, dan pakt ze het moment van 16:00 alsnog op. Is het al
+verwerkt, dan stopt ze meteen, nog voor er iets geïnstalleerd wordt.
+
+Welk moment voor het laatst verwerkt werd, staat onder `planning` in
+`state.json`. Mislukt een controle (bv. omdat het portaal even plat ligt), dan
+blijft het moment open en probeert de volgende run het opnieuw. Een foutmail
+krijg je maar één keer per moment, niet bij elke herkansing.
+
+Je uur blijft ook kloppen na de overgang van zomer- naar wintertijd.
 
 Wil je meerdere momenten per dag, zet dan meerdere uren in `MELD_UUR`,
 bijvoorbeeld `8,16` voor 's ochtends en 's avonds.
@@ -598,6 +614,7 @@ veranderd is, **zonder de punten van je kind ergens op te slaan**.
 | `watcher.py` | startpunt: instellingen, commando's, planning |
 | `portaal_client.py` | inloggen en gegevens ophalen |
 | `resultaten.py` | vergelijken met de vorige keer, geheugen bijhouden |
+| `planning.py` | beslist of een geplande run aan de beurt is |
 | `mailer.py` | de mail opstellen en versturen |
 | `kalender.py` | startpunt van de kalendersync |
 | `kalender_bron.py` | de jaarkalender ophalen en filteren |
@@ -640,6 +657,14 @@ kan worden, of gebruik *wachtwoord vergeten* op de portaalpagina.
 
 **"School ID ontbreekt" of HTTP 400**
 `A4L_SCHOOL_ID` is leeg of verkeerd. Zie [Je schoolcode vinden](#je-schoolcode-vinden).
+
+**Geen mail op het ingestelde uur**
+Kijk eerst of er wel iets nieuws was: een mail komt er alleen bij nieuwe of
+aangepaste resultaten. Kijk daarna bij *Actions → Resultatenwacht* naar de runs
+ná dat uur. In de stap *Is het ingestelde moment aan de beurt?* staat waarom een
+run wel of niet controleerde. GitHub start geplande runs soms uren te laat; de
+eerstvolgende run na het uur haalt het moment dan in. Staat er nergens een run
+na het ingestelde uur, start de workflow dan handmatig: die controleert altijd.
 
 **Geen mail, maar de run is groen**
 Meestal betekent dat gewoon: niets nieuws. Kijk in de log van de run; staat er
